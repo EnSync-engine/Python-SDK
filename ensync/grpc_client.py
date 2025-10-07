@@ -216,8 +216,41 @@ class EnSyncGrpcEngine:
         logger.info(f"{SERVICE_NAME} Connecting to {self.__config['url']}...")
         
         try:
-            # Create gRPC channel
-            self._channel = grpc.aio.insecure_channel(self.__config["url"])
+            # Create gRPC channel (secure or insecure based on URL)
+            url = self.__config["url"]
+            if url.startswith("grpcs://"):
+                # Use secure channel with TLS
+                url = url.replace("grpcs://", "")
+                # Add default port 443 if not specified
+                if ":" not in url:
+                    url = f"{url}:443"
+                credentials = grpc.ssl_channel_credentials()
+                self._channel = grpc.aio.secure_channel(url, credentials)
+                logger.debug(f"{SERVICE_NAME} Using secure gRPC channel (TLS)")
+            elif url.startswith("grpc://"):
+                # Use insecure channel
+                url = url.replace("grpc://", "")
+                # Add default port 50051 if not specified
+                if ":" not in url:
+                    url = f"{url}:50051"
+                self._channel = grpc.aio.insecure_channel(url)
+                logger.debug(f"{SERVICE_NAME} Using insecure gRPC channel")
+            else:
+                # Default: assume secure for production URLs, insecure for localhost
+                if "localhost" in url or "127.0.0.1" in url:
+                    # Add default port 50051 if not specified
+                    if ":" not in url:
+                        url = f"{url}:50051"
+                    self._channel = grpc.aio.insecure_channel(url)
+                    logger.debug(f"{SERVICE_NAME} Using insecure gRPC channel (localhost)")
+                else:
+                    # Add default port 443 if not specified
+                    if ":" not in url:
+                        url = f"{url}:443"
+                    credentials = grpc.ssl_channel_credentials()
+                    self._channel = grpc.aio.secure_channel(url, credentials)
+                    logger.debug(f"{SERVICE_NAME} Using secure gRPC channel (TLS)")
+            
             self._stub = ensync_pb2_grpc.EnSyncServiceStub(self._channel)
             
             logger.info(f"{SERVICE_NAME} gRPC channel established")
@@ -299,8 +332,8 @@ class EnSyncGrpcEngine:
         
         logger.info(f"{SERVICE_NAME} Connection closed, reason: {reason or 'none provided'}")
         
-        # Attempt reconnection if needed
-        if self._state["shouldReconnect"] and self._state["reconnectAttempts"] < self.__config["maxReconnectAttempts"]:
+        # Attempt reconnection with retry loop
+        while self._state["shouldReconnect"] and self._state["reconnectAttempts"] < self.__config["maxReconnectAttempts"]:
             self._state["reconnectAttempts"] += 1
             delay = self.__config["reconnectInterval"] * (1.5 ** (self._state["reconnectAttempts"] - 1)) / 1000
             logger.info(f"{SERVICE_NAME} Attempting reconnect {self._state['reconnectAttempts']}/{self.__config['maxReconnectAttempts']} in {delay}s...")
@@ -308,10 +341,16 @@ class EnSyncGrpcEngine:
             await asyncio.sleep(delay)
             try:
                 await self.connect()
+                # If connection succeeds, reset reconnect attempts and break
+                self._state["reconnectAttempts"] = 0
+                logger.info(f"{SERVICE_NAME} Reconnection successful")
+                break
             except Exception as error:
-                logger.error(f"{SERVICE_NAME} Reconnection attempt failed: {error}")
-        elif self._state["reconnectAttempts"] >= self.__config["maxReconnectAttempts"]:
-            logger.error(f"{SERVICE_NAME} Maximum reconnection attempts ({self.__config['maxReconnectAttempts']}) reached. Giving up.")
+                logger.error(f"{SERVICE_NAME} Reconnection attempt {self._state['reconnectAttempts']} failed: {error}")
+                # Continue to next iteration if we haven't reached max attempts
+                if self._state["reconnectAttempts"] >= self.__config["maxReconnectAttempts"]:
+                    logger.error(f"{SERVICE_NAME} Maximum reconnection attempts ({self.__config['maxReconnectAttempts']}) reached. Giving up.")
+                    break
     
     def _decrypt_payload(self, encrypted_payload: str, app_secret_key: Optional[str] = None) -> Dict[str, Any]:
         """Decrypt an encrypted payload."""

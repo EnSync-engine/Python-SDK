@@ -32,6 +32,122 @@ class SubscriptionHandler:
         self.auto_ack = auto_ack
 
 
+class WebSocketSubscription:
+    """Represents a WebSocket subscription to an event."""
+    
+    def __init__(self, event_name: str, engine: "EnSyncEngine", app_secret_key: Optional[str] = None, auto_ack: bool = True):
+        """
+        Initialize a subscription.
+        
+        Args:
+            event_name: Name of the event
+            engine: Reference to the EnSyncEngine instance
+            app_secret_key: Optional secret key for decryption
+            auto_ack: Whether to automatically acknowledge events
+        """
+        self.event_name = event_name
+        self._engine = engine
+        self._app_secret_key = app_secret_key
+        self._auto_ack = auto_ack
+    
+    def on(self, handler: Callable) -> Callable:
+        """
+        Register an event handler for this subscription.
+        
+        Args:
+            handler: Async function to handle events
+            
+        Returns:
+            Function to remove the handler
+        """
+        return self._engine._on(self.event_name, handler, self._app_secret_key, self._auto_ack)
+    
+    async def ack(self, event_idem: str, block: str) -> str:
+        """
+        Acknowledge an event.
+        
+        Args:
+            event_idem: Event identifier
+            block: Block identifier
+            
+        Returns:
+            Acknowledgment response
+        """
+        return await self._engine._ack(event_idem, block, self.event_name)
+    
+    async def resume(self) -> Dict[str, Any]:
+        """Resume event processing."""
+        return await self._engine._continue_processing(self.event_name)
+    
+    async def pause(self, reason: str = "") -> Dict[str, Any]:
+        """
+        Pause event processing.
+        
+        Args:
+            reason: Optional reason for pausing
+            
+        Returns:
+            Pause response
+        """
+        return await self._engine._pause_processing(self.event_name, reason)
+    
+    async def defer(self, event_idem: str, delay_ms: int = 1000, reason: str = "") -> Dict[str, Any]:
+        """
+        Defer processing of an event.
+        
+        Args:
+            event_idem: Event identifier
+            delay_ms: Delay in milliseconds
+            reason: Optional reason for deferring
+            
+        Returns:
+            Defer response
+        """
+        return await self._engine._defer_event(event_idem, self.event_name, delay_ms, reason)
+    
+    async def discard(self, event_idem: str, reason: str = "") -> Dict[str, Any]:
+        """
+        Discard an event permanently.
+        
+        Args:
+            event_idem: Event identifier
+            reason: Optional reason for discarding
+            
+        Returns:
+            Discard response
+        """
+        return await self._engine._discard_event(event_idem, self.event_name, reason)
+    
+    async def rollback(self, event_idem: str, block: str) -> str:
+        """
+        Roll back an event.
+        
+        Args:
+            event_idem: Event identifier
+            block: Block identifier
+            
+        Returns:
+            Rollback response
+        """
+        return await self._engine._rollback(event_idem, block)
+    
+    async def replay(self, event_idem: str):
+        """
+        Replay a specific event.
+        
+        Args:
+            event_idem: Event identifier
+            
+        Returns:
+            Replayed event data
+        """
+        return await self._engine._replay(event_idem, self.event_name, self._app_secret_key)
+    
+    async def unsubscribe(self):
+        """Unsubscribe from this event."""
+        return await self._engine._unsubscribe(self.event_name)
+
+
 class EnSyncEngine:
     """
     Main client for interacting with EnSync service.
@@ -49,8 +165,8 @@ class EnSyncEngine:
         """
         options = options or {}
         
-        # Configuration
-        self._config = {
+        # Configuration (private, internal use only)
+        self.__config = {
             "url": url.replace("http", "ws") + "/message",
             "accessKey": None,
             "clientId": None,
@@ -95,18 +211,18 @@ class EnSyncEngine:
             EnSyncError: If authentication fails
         """
         options = options or {}
-        self._config["accessKey"] = access_key
+        self.__config["accessKey"] = access_key
         if options.get("appSecretKey"):
-            self._config["appSecretKey"] = options["appSecretKey"]
+            self.__config["appSecretKey"] = options["appSecretKey"]
         await self.connect()
         return self
     
     async def connect(self):
         """Connect to the EnSync WebSocket server."""
-        logger.info(f"{SERVICE_NAME} Connecting to {self._config['url']}...")
+        logger.info(f"{SERVICE_NAME} Connecting to {self.__config['url']}...")
         
         try:
-            self._ws = await websockets.connect(self._config["url"])
+            self._ws = await websockets.connect(self.__config["url"])
             logger.info(f"{SERVICE_NAME} WebSocket connection established")
             self._state["isConnected"] = True
             self._state["reconnectAttempts"] = 0
@@ -150,15 +266,15 @@ class EnSyncEngine:
             EnSyncError: If authentication fails
         """
         logger.info(f"{SERVICE_NAME} Sending authentication message...")
-        auth_message = f"CONN;ACCESS_KEY=:{self._config['accessKey']}"
+        auth_message = f"CONN;ACCESS_KEY=:{self.__config['accessKey']}"
         response = await self._send_message(auth_message)
         
         if response.startswith("+PASS:"):
             logger.info(f"{SERVICE_NAME} Authentication successful")
             content = response.replace("+PASS:", "")
             resp = self._convert_key_value_to_object(content)
-            self._config["clientId"] = resp.get("clientId")
-            self._config["clientHash"] = resp.get("clientHash")
+            self.__config["clientId"] = resp.get("clientId")
+            self.__config["clientHash"] = resp.get("clientHash")
             self._state["isAuthenticated"] = True
             
             # Store the current subscriptions before clearing them
@@ -304,7 +420,7 @@ class EnSyncEngine:
             return None
         
         if event_data.get("encryptedPayload"):
-            decryption_key = app_secret_key or self._config.get("appSecretKey")
+            decryption_key = app_secret_key or self.__config.get("appSecretKey")
             decryption_result = self._decrypt_payload(event_data, decryption_key)
             if decryption_result.get("success"):
                 event_data["payload"] = decryption_result["payload"]
@@ -328,24 +444,30 @@ class EnSyncEngine:
             if "timeout" in callback:
                 callback["timeout"].cancel()
         
-        # Attempt reconnection if needed
-        if self._state["shouldReconnect"] and self._state["reconnectAttempts"] < self._config["maxReconnectAttempts"]:
+        # Attempt reconnection with retry loop
+        while self._state["shouldReconnect"] and self._state["reconnectAttempts"] < self.__config["maxReconnectAttempts"]:
             self._state["reconnectAttempts"] += 1
-            delay = self._config["reconnectInterval"] * (1.5 ** (self._state["reconnectAttempts"] - 1)) / 1000
-            logger.info(f"{SERVICE_NAME} Attempting reconnect {self._state['reconnectAttempts']}/{self._config['maxReconnectAttempts']} in {delay}s...")
+            delay = self.__config["reconnectInterval"] * (1.5 ** (self._state["reconnectAttempts"] - 1)) / 1000
+            logger.info(f"{SERVICE_NAME} Attempting reconnect {self._state['reconnectAttempts']}/{self.__config['maxReconnectAttempts']} in {delay}s...")
             
             await asyncio.sleep(delay)
             try:
                 await self.connect()
+                # If connection succeeds, reset reconnect attempts and break
+                self._state["reconnectAttempts"] = 0
+                logger.info(f"{SERVICE_NAME} Reconnection successful")
+                break
             except Exception as error:
-                logger.error(f"{SERVICE_NAME} Reconnection attempt failed: {error}")
-        elif self._state["reconnectAttempts"] >= self._config["maxReconnectAttempts"]:
-            logger.error(f"{SERVICE_NAME} Maximum reconnection attempts ({self._config['maxReconnectAttempts']}) reached. Giving up.")
+                logger.error(f"{SERVICE_NAME} Reconnection attempt {self._state['reconnectAttempts']} failed: {error}")
+                # Continue to next iteration if we haven't reached max attempts
+                if self._state["reconnectAttempts"] >= self.__config["maxReconnectAttempts"]:
+                    logger.error(f"{SERVICE_NAME} Maximum reconnection attempts ({self.__config['maxReconnectAttempts']}) reached. Giving up.")
+                    break
     
     def _decrypt_payload(self, event_data: Dict[str, Any], app_secret_key: Optional[str] = None) -> Dict[str, Any]:
         """Decrypt an encrypted payload."""
         try:
-            decryption_key = app_secret_key or self._config.get("appSecretKey") or self._config.get("clientHash")
+            decryption_key = app_secret_key or self.__config.get("appSecretKey") or self.__config.get("clientHash")
             
             if not decryption_key:
                 logger.error(f"{SERVICE_NAME} No decryption key available")
@@ -390,7 +512,7 @@ class EnSyncEngine:
         """Start the ping interval."""
         while self._state["shouldReconnect"]:
             try:
-                await asyncio.sleep(self._config["pingInterval"] / 1000)
+                await asyncio.sleep(self.__config["pingInterval"] / 1000)
                 if self._ws:
                     await self._ws.ping()
             except Exception as e:
@@ -490,7 +612,7 @@ class EnSyncEngine:
             
             # Send messages to all recipients
             for recipient, encrypted_base64 in encrypted_payloads:
-                message = f"PUB;CLIENT_ID=:{self._config['clientId']};EVENT_NAME=:{event_name};PAYLOAD=:{encrypted_base64};DELIVERY_TO=:{recipient};METADATA=:{json.dumps(metadata)}"
+                message = f"PUB;CLIENT_ID=:{self.__config['clientId']};EVENT_NAME=:{event_name};PAYLOAD=:{encrypted_base64};DELIVERY_TO=:{recipient};METADATA=:{json.dumps(metadata)}"
                 response = await self._send_message(message)
                 responses.append(response)
             
@@ -505,7 +627,7 @@ class EnSyncEngine:
         
         options = options or {"autoAck": True, "appSecretKey": None}
         
-        message = f"SUB;CLIENT_ID=:{self._config['clientId']};EVENT_NAME=:{event_name}"
+        message = f"SUB;CLIENT_ID=:{self.__config['clientId']};EVENT_NAME=:{event_name}"
         response = await self._send_message(message)
         
         if response.startswith("+PASS:"):
@@ -513,18 +635,13 @@ class EnSyncEngine:
                 self._subscriptions[event_name] = set()
             logger.info(f"{SERVICE_NAME} Successfully subscribed to {event_name}")
             
-            # Return subscription object with methods
-            return {
-                "on": lambda handler: self._on(event_name, handler, options.get("appSecretKey"), options.get("autoAck", True)),
-                "ack": lambda event_idem, block: self._ack(event_idem, block, event_name),
-                "resume": lambda: self._continue_processing(event_name),
-                "pause": lambda reason="": self._pause_processing(event_name, reason),
-                "defer": lambda event_idem, delay_ms=1000, reason="": self._defer_event(event_idem, event_name, delay_ms, reason),
-                "discard": lambda event_idem, reason="": self._discard_event(event_idem, event_name, reason),
-                "rollback": lambda event_idem, block: self._rollback(event_idem, block),
-                "replay": lambda event_idem: self._replay(event_idem, event_name, options.get("appSecretKey")),
-                "unsubscribe": lambda: self._unsubscribe(event_name)
-            }
+            # Return subscription object
+            return WebSocketSubscription(
+                event_name,
+                self,
+                options.get("appSecretKey"),
+                options.get("autoAck", True)
+            )
         else:
             raise EnSyncError(f"Subscription failed: {response}", "EnSyncSubscriptionError")
     
@@ -556,7 +673,7 @@ class EnSyncEngine:
         if not self._state["isAuthenticated"]:
             raise EnSyncError("Not authenticated", "EnSyncAuthError")
         
-        message = f"UNSUB;CLIENT_ID=:{self._config['clientId']};EVENT_NAME=:{event_name}"
+        message = f"UNSUB;CLIENT_ID=:{self.__config['clientId']};EVENT_NAME=:{event_name}"
         response = await self._send_message(message)
         
         if response.startswith("+PASS:"):
@@ -572,7 +689,7 @@ class EnSyncEngine:
             raise EnSyncError("Not authenticated", "EnSyncAuthError")
         
         try:
-            payload = f"ACK;CLIENT_ID=:{self._config['clientId']};EVENT_IDEM=:{event_idem};BLOCK=:{block};EVENT_NAME=:{event_name}"
+            payload = f"ACK;CLIENT_ID=:{self.__config['clientId']};EVENT_IDEM=:{event_idem};BLOCK=:{block};EVENT_NAME=:{event_name}"
             return await self._send_message(payload)
         except Exception as e:
             raise EnSyncError(f"Failed to acknowledge event. {str(e)}", "EnSyncGenericError")
@@ -583,7 +700,7 @@ class EnSyncEngine:
             raise EnSyncError("Not authenticated", "EnSyncAuthError")
         
         try:
-            payload = f"ROLLBACK;CLIENT_ID=:{self._config['clientId']};EVENT_IDEM=:{event_idem};BLOCK=:{block}"
+            payload = f"ROLLBACK;CLIENT_ID=:{self.__config['clientId']};EVENT_IDEM=:{event_idem};BLOCK=:{block}"
             return await self._send_message(payload)
         except Exception as e:
             raise EnSyncError(f"Failed to trigger rollback. {str(e)}", "EnSyncGenericError")
@@ -594,7 +711,7 @@ class EnSyncEngine:
             raise EnSyncError("Not authenticated", "EnSyncAuthError")
         
         try:
-            message = f"DISCARD;CLIENT_ID=:{self._config['clientId']};EVENT_IDEM=:{event_id};EVENT_NAME=:{event_name};REASON=:{reason}"
+            message = f"DISCARD;CLIENT_ID=:{self.__config['clientId']};EVENT_IDEM=:{event_id};EVENT_NAME=:{event_name};REASON=:{reason}"
             response = await self._send_message(message)
             
             if response.startswith("-FAIL:"):
@@ -620,7 +737,7 @@ class EnSyncEngine:
             raise EnSyncError("Invalid delay", "EnSyncValidationError")
         
         try:
-            message = f"DEFER;CLIENT_ID=:{self._config['clientId']};EVENT_IDEM=:{event_id};EVENT_NAME=:{event_name};DELAY=:{delay_ms};REASON=:{reason}"
+            message = f"DEFER;CLIENT_ID=:{self.__config['clientId']};EVENT_IDEM=:{event_id};EVENT_NAME=:{event_name};DELAY=:{delay_ms};REASON=:{reason}"
             response = await self._send_message(message)
             
             if response.startswith("-FAIL"):
@@ -646,7 +763,7 @@ class EnSyncEngine:
             raise EnSyncError("Not authenticated", "EnSyncAuthError")
         
         try:
-            message = f"CONTINUE;CLIENT_ID=:{self._config['clientId']};EVENT_NAME=:{event_name}"
+            message = f"CONTINUE;CLIENT_ID=:{self.__config['clientId']};EVENT_NAME=:{event_name}"
             response = await self._send_message(message)
             
             if response.startswith("-FAIL:"):
@@ -668,7 +785,7 @@ class EnSyncEngine:
             raise EnSyncError("Not authenticated", "EnSyncAuthError")
         
         try:
-            message = f"PAUSE;CLIENT_ID=:{self._config['clientId']};EVENT_NAME=:{event_name};REASON=:{reason}"
+            message = f"PAUSE;CLIENT_ID=:{self.__config['clientId']};EVENT_NAME=:{event_name};REASON=:{reason}"
             response = await self._send_message(message)
             
             if response.startswith("-FAIL:"):
@@ -694,7 +811,7 @@ class EnSyncEngine:
             raise EnSyncError("Event identifier (eventIdem) is required", "EnSyncReplayError")
         
         try:
-            message = f"REPLAY;CLIENT_ID=:{self._config['clientId']};EVENT_IDEM=:{event_idem};EVENT_NAME=:{event_name}"
+            message = f"REPLAY;CLIENT_ID=:{self.__config['clientId']};EVENT_IDEM=:{event_idem};EVENT_NAME=:{event_name}"
             response = await self._send_message(message)
             
             if response.startswith("-FAIL:"):
@@ -708,7 +825,7 @@ class EnSyncEngine:
     
     def get_client_public_key(self) -> str:
         """Get the client's public key (client hash)."""
-        return self._config.get("clientHash")
+        return self.__config.get("clientHash")
     
     async def close(self):
         """Close the WebSocket connection."""

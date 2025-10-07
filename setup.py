@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="ensync-sdk",
-    version="0.2.0",
+    version="0.3.0",
     packages=["ensync"],
     package_dir={"ensync": "ensync"},
     py_modules=[],

@@ -20,18 +20,41 @@ pip install ensync-sdk
 
 ### Importing
 
+#### Default (gRPC)
+
 ```python
-# Import the main engine class
+# Import the default engine class (gRPC)
 from ensync_sdk import EnSyncEngine
+
+# Initialize gRPC client
+engine = EnSyncEngine("node.ensync.cloud:50051")
+client = await engine.create_client("your-app-key")
 ```
+
+#### WebSocket Alternative
+
+```python
+# Import the WebSocket engine class
+from ensync_sdk import EnSyncWebSocketEngine
+
+# Initialize WebSocket client
+engine = EnSyncWebSocketEngine("wss://node.ensync.cloud")
+client = await engine.create_client("your-app-key")
+```
+
+Both clients provide the same API for publishing and subscribing to events.
 
 ---
 
 ## API Reference
 
-### EnSyncEngine
+### EnSyncEngine (WebSocket)
 
-The main class that manages connections and client creation for the EnSync system.
+The main class that manages WebSocket connections and client creation for the EnSync system.
+
+### EnSyncGrpcEngine (gRPC)
+
+The main class that manages gRPC connections and client creation for the EnSync system.
 
 ```python
 engine = EnSyncEngine(url, options=None)

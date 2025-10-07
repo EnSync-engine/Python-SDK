@@ -1,4 +1,5 @@
-from .websocket import EnSyncEngine
-from .grpc_client import EnSyncGrpcEngine
+from .grpc_client import EnSyncGrpcEngine as EnSyncEngine
+from .websocket import EnSyncEngine as EnSyncWebSocketEngine
 
-__all__ = ['EnSyncEngine', 'EnSyncGrpcEngine']
+# gRPC is the default, WebSocket is an alternative
+__all__ = ['EnSyncEngine', 'EnSyncWebSocketEngine']
