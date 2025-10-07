@@ -19,9 +19,9 @@ from .ecc_crypto import (
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger("EnSync")
+logger = logging.getLogger("EnSync WS:")
 
-SERVICE_NAME = "EnSync:"
+SERVICE_NAME = ""
 
 
 class SubscriptionHandler:
@@ -250,7 +250,6 @@ class EnSyncEngine:
         
         # Process response
         if message.startswith("+PASS:") or message.startswith("+REPLAY:") or message.startswith("-FAIL:"):
-            logger.info(f"{SERVICE_NAME} Processing response: {message[:80]}... (callbacks in queue: {len(self._message_callbacks)})")
             if self._message_callbacks:
                 callback = self._message_callbacks.popleft()
                 if message.startswith("+PASS:") or message.startswith("+REPLAY:"):
@@ -371,7 +370,7 @@ class EnSyncEngine:
                         decrypted = True
                         break
                     except Exception as error:
-                        logger.debug(f"{SERVICE_NAME} Couldn't decrypt with recipient ID {recipient_id}: {str(error)}")
+                        logger.debug(f"{SERVICE_NAME} Couldn't decrypt for recipient ID {recipient_id}: {str(error)}")
                 
                 if not decrypted:
                     logger.error(f"{SERVICE_NAME} Failed to decrypt hybrid message with any of the {len(recipient_ids)} recipient keys")
@@ -426,7 +425,6 @@ class EnSyncEngine:
         }
         
         self._message_callbacks.append(callback)
-        logger.info(f"{SERVICE_NAME} Sending message: {message[:80]}... (callbacks in queue: {len(self._message_callbacks)})")
         
         if self._ws:
             await self._ws.send(message)
@@ -437,7 +435,6 @@ class EnSyncEngine:
         try:
             response = await future
             timeout_task.cancel()
-            logger.info(f"{SERVICE_NAME} Received response: {response[:80] if response else 'None'}...")
             return response
         except Exception as e:
             timeout_task.cancel()
@@ -469,8 +466,6 @@ class EnSyncEngine:
                 # Decode recipient keys from base64 to bytes for hybrid_encrypt
                 recipient_keys_bytes = [base64.b64decode(r) for r in recipients]
                 encrypted_data = hybrid_encrypt(payload_bytes, recipient_keys_bytes)
-                
-                logger.debug(f"{SERVICE_NAME} Encrypted data: {encrypted_data}")
                 
                 # Format for transmission - encryptedPayload is already a dict with nonce/ciphertext
                 hybrid_message = {

@@ -22,7 +22,7 @@ pip install ensync-sdk
 
 ```python
 # Import the main engine class
-from ensync import EnSyncEngine
+from ensync_sdk import EnSyncEngine
 ```
 
 ---

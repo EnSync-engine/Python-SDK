@@ -3,17 +3,27 @@ from setuptools import setup, find_packages
 
 setup(
     name="ensync-sdk",
-    version="0.1.0",
+    version="0.2.0",
     packages=["ensync"],
     package_dir={"ensync": "ensync"},
     py_modules=[],
-    include_package_data=False,
+    include_package_data=True,
     package_data={
-        "ensync": ["__init__.py", "ecc_crypto.py", "error.py", "websocket.py"]
+        "ensync": [
+            "__init__.py", 
+            "ecc_crypto.py", 
+            "error.py", 
+            "websocket.py",
+            "grpc_client.py",
+            "ensync_pb2.py",
+            "ensync_pb2_grpc.py"
+        ]
     },
     install_requires=[
         "websockets>=10.0",
         "pynacl>=1.5.0",
+        "grpcio>=1.50.0",
+        "grpcio-tools>=1.50.0",
     ],
     extras_require={
         "dev": [
