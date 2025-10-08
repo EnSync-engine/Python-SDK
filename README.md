@@ -26,8 +26,13 @@ pip install ensync-sdk
 # Import the default engine class (gRPC)
 from ensync_sdk import EnSyncEngine
 
-# Initialize gRPC client
-engine = EnSyncEngine("node.ensync.cloud:50051")
+# Production - uses secure TLS on port 443 by default
+engine = EnSyncEngine("node.ensync.cloud")
+
+# Development - uses insecure connection on port 50051 by default
+# engine = EnSyncEngine("localhost")
+
+# Create authenticated client
 client = await engine.create_client("your-app-key")
 ```
 
@@ -44,17 +49,23 @@ client = await engine.create_client("your-app-key")
 
 Both clients provide the same API for publishing and subscribing to events.
 
+**gRPC Connection Options:**
+- Production URLs automatically use secure TLS (port 443)
+- `localhost` automatically uses insecure connection (port 50051)
+- Explicit protocols: `grpcs://` (secure) or `grpc://` (insecure)
+- Custom ports: `node.ensync.cloud:9090`
+
 ---
 
 ## API Reference
 
-### EnSyncEngine (WebSocket)
+### EnSyncEngine (gRPC - Default)
 
-The main class that manages WebSocket connections and client creation for the EnSync system.
+The main class that manages gRPC connections and client creation for the EnSync system. This is the default and recommended client for production use.
 
-### EnSyncGrpcEngine (gRPC)
+### EnSyncWebSocketEngine (WebSocket - Alternative)
 
-The main class that manages gRPC connections and client creation for the EnSync system.
+An alternative class that manages WebSocket connections and client creation for the EnSync system.
 
 ```python
 engine = EnSyncEngine(url, options=None)
@@ -75,17 +86,6 @@ engine = EnSyncEngine(url, options=None)
 | `reconnect_interval` | `int` | `5000` | Reconnection interval in ms |
 | `max_reconnect_attempts` | `int` | `10` | Maximum reconnection attempts |
 
-#### Events
-
-EnSyncEngine uses an event-based system for handling connection states:
-
-```python
-# Register event handlers
-engine.on_error(lambda error: print(f"Error: {error}"))
-engine.on_connect(lambda: print("Connected"))
-engine.on_disconnect(lambda: print("Disconnected"))
-```
-
 ---
 
 ### Creating a Client
@@ -94,8 +94,8 @@ engine.on_disconnect(lambda: print("Disconnected"))
 - Create a client with your app key
 
 ```python
-# Initialize the engine
-engine = EnSyncEngine("wss://node.gms.ensync.cloud")
+# Initialize the engine (gRPC with TLS)
+engine = EnSyncEngine("grpcs://node.gms.ensync.cloud")
 
 # Create a client
 client = await engine.create_client("your-app-key")
@@ -164,10 +164,11 @@ await client.publish(
 subscription = await client.subscribe("company/service/event-type")
 
 # Set up event handler
-@subscription.on_event
 async def handle_event(event):
     print(f"Received event: {event.payload}")
     # Process the event
+
+subscription.on(handle_event)
 
 # With options
 subscription = await client.subscribe(
@@ -196,11 +197,12 @@ subscription = await client.subscribe(
 #### Subscription Methods
 
 ```python
-# Handle incoming events using decorator
-@subscription.on_event
+# Handle incoming events
 async def handle_event(event):
     # process event
     pass
+
+subscription.on(handle_event)
 
 # Manually acknowledge an event
 await subscription.ack(event.idem, event.block)
@@ -315,10 +317,11 @@ async def quick_start():
         subscription = await client.subscribe("orders/status/updated")
         
         # 4. Handle incoming events
-        @subscription.on_event
         async def handle_event(event):
             print(f"Received order update: {event.payload['order_id']} is {event.payload['status']}")
             # Process event...
+        
+        subscription.on(handle_event)
 
         # 5. Keep the program running
         try:
@@ -358,24 +361,22 @@ async def publishing_example():
     engine = EnSyncEngine("wss://node.ensync.cloud")
     client = await engine.create_client(os.environ.get("ENSYNC_APP_KEY"))
 
-    # Basic publish
-    result = await client.publish(
+    # Basic publish - returns event ID
+    event_id = await client.publish(
         "notifications/email/sent",
         ["appId"],  # The appId of the receiving party
         {"to": "user@example.com", "subject": "Welcome!"}
     )
+    print(f"Published event: {event_id}")
 
-    # With performance metrics
-    result_with_metrics = await client.publish(
+    # With metadata
+    event_id = await client.publish(
         "notifications/email/sent",
         ["appId"],  # The appId of the receiving party
         {"to": "user@example.com", "subject": "Welcome!"},
-        {"persist": True},
-        {"measure_performance": True}
+        {"persist": True, "headers": {"source": "email-service"}}
     )
-
-    print(f"Encryption took {result_with_metrics['performance']['encryption']['average']}ms")
-    print(f"Network took {result_with_metrics['performance']['network']['average']}ms")
+    print(f"Published event with metadata: {event_id}")
     
     await client.close()
 
@@ -408,7 +409,7 @@ def is_temporary_error(error):
 
 async def subscribing_example():
     # Create client with decryption key
-    engine = EnSyncEngine("wss://node.ensync.cloud")
+    engine = EnSyncEngine("grpcs://node.gms.ensync.cloud")
     client = await engine.create_client(
         os.environ.get("ENSYNC_APP_KEY"),
         {"app_secret_key": os.environ.get("ENSYNC_SECRET_KEY")}
@@ -418,7 +419,6 @@ async def subscribing_example():
     subscription = await client.subscribe("payments/completed", {"auto_ack": False})
 
     # Handle events
-    @subscription.on_event
     async def handle_payment(event):
         try:
             # Process the payment
@@ -438,6 +438,8 @@ async def subscribing_example():
             else:
                 # Discard if permanent error
                 await subscription.discard(event.idem, "Invalid payment data")
+    
+    subscription.on(handle_payment)
     
     # Keep the program running
     try:
@@ -474,8 +476,7 @@ async def main():
     engine = EnSyncEngine(os.environ.get("ENSYNC_URL"))
     client = await engine.create_client(os.environ.get("ENSYNC_APP_KEY"))
     
-    # Implement proper error handling and reconnection
-    engine.on_disconnect(lambda: print("Connection lost, will reconnect automatically"))
+    # gRPC client handles reconnection automatically
     
     # Set up signal handlers for graceful shutdown
     loop = asyncio.get_running_loop()
@@ -593,10 +594,11 @@ Regular event subscription:
 
 ```python
 # Events come through the handler asynchronously
-@subscription.on_event
 async def handle_event(event):
     # Process event here
     print(f"Received event: {event}")
+
+subscription.on(handle_event)
 ```
 
 Replay function:
@@ -676,10 +678,11 @@ The discard method returns an object with status information:
 subscription = await client.subscribe("inventory/updates")
 
 # Set up event handler
-@subscription.on_event
 async def handle_event(event):
     print(f"Processing event: {event.id}")
     await process_event(event)
+
+subscription.on(handle_event)
 
 # Pause the subscription when needed
 # This will temporarily stop receiving events
