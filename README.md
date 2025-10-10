@@ -155,6 +155,51 @@ await client.publish(
 | `persist` | `bool` | `False` | Whether to persist the event on the server |
 | `headers` | `dict` | `{}` | Custom headers to include with the event |
 
+#### Payload Metadata (Automatic)
+
+When you publish an event, the SDK automatically calculates and sends payload metadata alongside your event. This metadata is available to recipients **without decrypting the payload**, making it useful for routing, filtering, and monitoring.
+
+**Automatically Generated Fields:**
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `byte_size` | `int` | Total byte size of the JSON-serialized payload |
+| `skeleton` | `dict` | Top-level structure showing property names and their datatypes |
+
+**Example:**
+
+For a payload like:
+```python
+{
+    "message": "hello",
+    "data": {"content": "random"},
+    "count": 42,
+    "active": True
+}
+```
+
+The automatically generated `payload_metadata` will be:
+```python
+{
+    "byte_size": 67,
+    "skeleton": {
+        "message": "string",
+        "data": "object",
+        "count": "integer",
+        "active": "boolean"
+    }
+}
+```
+
+**Supported Datatypes:**
+- `string` - String values
+- `integer` - Integer numbers
+- `number` - Float/decimal numbers
+- `boolean` - True/False values
+- `object` - Nested dictionaries
+- `array` - Lists/arrays
+- `null` - None/null values
+
 ---
 
 ### Subscribing to Events
