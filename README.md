@@ -146,7 +146,7 @@ await client.publish(
 | `event_name` | `str` | Yes | Name of the event (e.g., "company/service/event-type") |
 | `recipients` | `list[str]` | Yes | Array of appIds (the appIds of receiving parties) |
 | `payload` | `dict` | Yes | Your event data (any JSON-serializable object) |
-| `metadata` | `dict` | No | Control event persistence and add custom headers |
+| `metadata` | `dict` | No | Optional custom metadata as key-value pairs |
 
 The `metadata` parameter accepts any custom key-value pairs you want to include with your event. This metadata is passed through to recipients and can be used for routing, filtering, or any application-specific purposes.
 
