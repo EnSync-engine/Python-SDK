@@ -130,12 +130,12 @@ await client.publish(
     {"data": "your payload"}       # Event payload
 )
 
-# With optional parameters
+# With optional metadata
 await client.publish(
     "company/service/event-type",
     ["appId"],                     # The appId of the receiving party
     {"data": "your payload"},
-    {"persist": True, "headers": {"source": "order-system"}}
+    {"headers": {"source": "order-system"}}
 )
 ```
 
@@ -146,13 +146,12 @@ await client.publish(
 | `event_name` | `str` | Yes | Name of the event (e.g., "company/service/event-type") |
 | `recipients` | `list[str]` | Yes | Array of appIds (the appIds of receiving parties) |
 | `payload` | `dict` | Yes | Your event data (any JSON-serializable object) |
-| `metadata` | `dict` | No | Control event persistence and add custom headers |
+| `metadata` | `dict` | No | Optional metadata with custom headers |
 
 **Metadata Dictionary:**
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
-| `persist` | `bool` | `False` | Whether to persist the event on the server |
 | `headers` | `dict` | `{}` | Custom headers to include with the event |
 
 #### Replying to Events
@@ -393,7 +392,7 @@ async def publishing_example():
         "notifications/email/sent",
         ["appId"],  # The appId of the receiving party
         {"to": "user@example.com", "subject": "Welcome!"},
-        {"persist": True, "headers": {"source": "email-service"}}
+        {"headers": {"source": "email-service"}}
     )
     print(f"Published event with metadata: {event_id}")
     
@@ -590,7 +589,6 @@ The replay command returns the complete event object with its payload:
     "idem": "event-idem-123",
     "block": "81404",
     "metadata": {
-        "persist": {"is_string": False, "content": "true"},
         "headers": {},
         "$internal": {
             "replay_info": {
