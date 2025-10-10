@@ -155,50 +155,24 @@ await client.publish(
 | `persist` | `bool` | `False` | Whether to persist the event on the server |
 | `headers` | `dict` | `{}` | Custom headers to include with the event |
 
-#### Payload Metadata (Automatic)
+#### Replying to Events
 
-When you publish an event, the SDK automatically calculates and sends payload metadata alongside your event. This metadata is available to recipients **without decrypting the payload**, making it useful for routing, filtering, and monitoring.
+When you receive an event, it includes a `sender` field containing the sender's public key. You can use this to send a response back to the original sender:
 
-**Automatically Generated Fields:**
-
-| Field | Type | Description |
-|-------|------|-------------|
-| `byte_size` | `int` | Total byte size of the JSON-serialized payload |
-| `skeleton` | `dict` | Top-level structure showing property names and their datatypes |
-
-**Example:**
-
-For a payload like:
 ```python
-{
-    "message": "hello",
-    "data": {"content": "random"},
-    "count": 42,
-    "active": True
-}
+async def handle_event(event):
+    # Process the event
+    print(f"Received: {event['payload']}")
+    
+    # Reply back to the sender
+    sender_public_key = event.get('sender')
+    if sender_public_key:
+        await client.publish(
+            event.get('eventName'),
+            [sender_public_key],  # Send back to the original sender
+            {"status": "received", "response": "Processing complete"}
+        )
 ```
-
-The automatically generated `payload_metadata` will be:
-```python
-{
-    "byte_size": 67,
-    "skeleton": {
-        "message": "string",
-        "data": "object",
-        "count": "integer",
-        "active": "boolean"
-    }
-}
-```
-
-**Supported Datatypes:**
-- `string` - String values
-- `integer` - Integer numbers
-- `number` - Float/decimal numbers
-- `boolean` - True/False values
-- `object` - Nested dictionaries
-- `array` - Lists/arrays
-- `null` - None/null values
 
 ---
 
