@@ -482,9 +482,6 @@ class EnSyncGrpcEngine:
         
         # Serialize payload_metadata as JSON string for gRPC
         payload_metadata_json = json.dumps(payload_metadata)
-        print("Payload metadata:", payload_metadata_json)
-        print()
-        print("Payload:", payload)
         
         try:
             responses = []
