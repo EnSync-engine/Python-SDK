@@ -110,7 +110,6 @@ async def main():
                     event_name,
                     [recipient],
                     payload,
-                    {"persist": True, "headers": {"source": "grpc-test-publisher"}}
                 )
                 
                 duration = (time.time() - start) * 1000

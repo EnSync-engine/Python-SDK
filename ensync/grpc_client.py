@@ -504,18 +504,14 @@ class EnSyncGrpcEngine:
                 
                 # Send to all recipients with the same encrypted payload
                 for recipient in recipients:
-                    metadata_json = json.dumps(metadata)
                     request = ensync_pb2.PublishEventRequest(
                         client_id=self.__config["clientId"],
                         event_name=event_name,
                         payload=encrypted_base64,
                         delivery_to=recipient,
-                        metadata=metadata_json,
+                        metadata=json.dumps(metadata),
                         payload_metadata=payload_metadata_json
                     )
-                    logger.info(f"{SERVICE_NAME} Publishing event: {event_name}")
-                    logger.debug(f"{SERVICE_NAME} Metadata being sent: {metadata_json}")
-                    logger.debug(f"{SERVICE_NAME} Payload metadata: {payload_metadata_json}")
                     response = await self._stub.PublishEvent(request)
                     
                     if not response.success:
@@ -529,18 +525,14 @@ class EnSyncGrpcEngine:
                     encrypted = encrypt_ed25519(payload_bytes, recipient_bytes)
                     encrypted_base64 = base64.b64encode(json.dumps(encrypted).encode('utf-8')).decode('utf-8')
                     
-                    metadata_json = json.dumps(metadata)
                     request = ensync_pb2.PublishEventRequest(
                         client_id=self.__config["clientId"],
                         event_name=event_name,
                         payload=encrypted_base64,
                         delivery_to=recipient,
-                        metadata=metadata_json,
+                        metadata=json.dumps(metadata),
                         payload_metadata=payload_metadata_json
                     )
-                    logger.info(f"{SERVICE_NAME} Publishing event: {event_name}")
-                    logger.debug(f"{SERVICE_NAME} Metadata being sent: {metadata_json}")
-                    logger.debug(f"{SERVICE_NAME} Payload metadata: {payload_metadata_json}")
                     response = await self._stub.PublishEvent(request)
                     
                     if not response.success:
