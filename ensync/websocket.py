@@ -406,7 +406,8 @@ class EnSyncEngine:
                     "timestamp": record.get("loggedAt"),
                     "payload": record.get("payload"),
                     "encryptedPayload": record.get("encryptedPayload"),
-                    "metadata": record.get("metadata", {})
+                    "metadata": record.get("metadata", {}),
+                    "sender": record.get("sender")
                 }
             return None
         except Exception as e:
