@@ -58,6 +58,7 @@ message PublishEventRequest {
   string payload = 3;
   string delivery_to = 4;
   string metadata = 5;
+  optional string payload_metadata = 6;
 }
 
 message PublishEventResponse {
@@ -88,6 +89,7 @@ message EventStreamResponse {
   string payload = 3;
   int64 partition_block = 4;
   string metadata = 5;
+  string sender = 6;
 }
 
 // Event Management Messages

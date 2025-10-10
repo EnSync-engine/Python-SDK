@@ -115,6 +115,7 @@ async def main():
             print(f"\n[Event #{event_count}] Received at {time.strftime('%H:%M:%S')}")
             print(f"  Event ID: {event.get('idem')}")
             print(f"  Event Name: {event.get('eventName')}")
+            print(f"  Event: {event}")
             print(f"  Block: {event.get('block')}")
             print(f"  Timestamp: {event.get('timestamp')}")
             
@@ -133,12 +134,53 @@ async def main():
                 print(f"  Metadata: {metadata}")
             
             print("-" * 60)
-            if event_count == 1:
-                defer_res = await subscription.defer(event.get('idem'), 1000)
-                print(f"DEFER Response: {defer_res}")
-            else:
-                ack_res = await subscription.ack(event.get('idem'), event.get('block'))
-                print(f"ACK Response: {ack_res}")
+            # if event_count == 1:
+            #     defer_res = await subscription.defer(event.get('idem'), 1000)
+            #     print(f"DEFER Response: {defer_res}")
+            # else:
+            ack_res = await subscription.ack(event.get('idem'), event.get('block'))
+            print(f"ACK Response: {ack_res}")
+            
+            # Get the sender's public key from the event to send response back
+            sender_public_key = event.get('sender')
+            
+            if not sender_public_key:
+                print("Warning: No recipient public key found, skipping publish")
+                return
+            
+            print("Publishing response...", sender_public_key)
+            response = await client.publish(
+             event.get('eventName'),
+             [sender_public_key],
+             {
+              "conversation_id": payload.get("conversation_id"),
+              "tenant_id": payload.get("tenant_id"),
+              "tool": payload.get("tool"),
+              "result": {
+                "id": "iphone-12-pro-001",
+                "name": "iPhone 12 Pro",
+                "brand": "Apple",
+                "category": "Smartphones",
+                "price": 999.99,
+                "currency": "USD",
+                "storage": "128GB",
+                "color": "Pacific Blue",
+                "display": "6.1-inch Super Retina XDR",
+                "camera": "Triple 12MP camera system",
+                "processor": "A14 Bionic chip",
+                "in_stock": True,
+                "rating": 4.7,
+                "release_year": 2020
+              },
+              "status": "success",
+              "timestamp": int(time.time() * 1000)
+             },
+             {
+              "original_event_id": event.get("eventIdem")
+             }
+            )
+
+            print(f"Req-Response: {response}")
         
         # Register the event handler
         subscription.on(handle_event)

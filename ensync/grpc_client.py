@@ -421,6 +421,28 @@ class EnSyncGrpcEngine:
             task.cancel()
         self._subscription_tasks.clear()
     
+    def _get_payload_skeleton(self, payload: Dict[str, Any]) -> Dict[str, str]:
+        """Extract top-level skeleton with datatypes."""
+        skeleton = {}
+        for key, value in payload.items():
+            if isinstance(value, bool):  # Check bool before int (bool is subclass of int)
+                skeleton[key] = "boolean"
+            elif isinstance(value, str):
+                skeleton[key] = "string"
+            elif isinstance(value, int):
+                skeleton[key] = "integer"
+            elif isinstance(value, float):
+                skeleton[key] = "number"
+            elif isinstance(value, dict):
+                skeleton[key] = "object"
+            elif isinstance(value, list):
+                skeleton[key] = "array"
+            elif value is None:
+                skeleton[key] = "null"
+            else:
+                skeleton[key] = type(value).__name__
+        return skeleton
+    
     async def publish(self, event_name: str, recipients: List[str] = None, payload: Dict[str, Any] = None,
                     metadata: Dict[str, Any] = None, options: Dict[str, Any] = None) -> str:
         """
@@ -449,7 +471,20 @@ class EnSyncGrpcEngine:
             raise EnSyncError("recipients array cannot be empty", "EnSyncAuthError")
         
         use_hybrid_encryption = options.get("useHybridEncryption", True) if options else True
-        metadata = metadata or {"persist": True, "headers": {}}
+        metadata = metadata or {}
+        
+        # Calculate payload metadata before encryption
+        payload_bytes = json.dumps(payload).encode('utf-8')
+        payload_metadata = {
+            "byte_size": len(payload_bytes),
+            "skeleton": self._get_payload_skeleton(payload) if isinstance(payload, dict) else {}
+        }
+        
+        # Serialize payload_metadata as JSON string for gRPC
+        payload_metadata_json = json.dumps(payload_metadata)
+        print("Payload metadata:", payload_metadata_json)
+        print()
+        print("Payload:", payload)
         
         try:
             responses = []
@@ -457,7 +492,6 @@ class EnSyncGrpcEngine:
             # Only use hybrid encryption when there are multiple recipients
             if use_hybrid_encryption and len(recipients) > 1:
                 # Use hybrid encryption (one encryption for all recipients)
-                payload_bytes = json.dumps(payload).encode('utf-8')
                 recipient_keys_bytes = [base64.b64decode(r) for r in recipients]
                 encrypted_data = hybrid_encrypt(payload_bytes, recipient_keys_bytes)
                 
@@ -478,7 +512,8 @@ class EnSyncGrpcEngine:
                         event_name=event_name,
                         payload=encrypted_base64,
                         delivery_to=recipient,
-                        metadata=json.dumps(metadata)
+                        metadata=json.dumps(metadata),
+                        payload_metadata=payload_metadata_json
                     )
                     response = await self._stub.PublishEvent(request)
                     
@@ -488,7 +523,6 @@ class EnSyncGrpcEngine:
                     responses.append(response.event_idem)
             else:
                 # Use traditional encryption (separate encryption for each recipient)
-                payload_bytes = json.dumps(payload).encode('utf-8')
                 for recipient in recipients:
                     recipient_bytes = base64.b64decode(recipient)
                     encrypted = encrypt_ed25519(payload_bytes, recipient_bytes)
@@ -499,7 +533,8 @@ class EnSyncGrpcEngine:
                         event_name=event_name,
                         payload=encrypted_base64,
                         delivery_to=recipient,
-                        metadata=json.dumps(metadata)
+                        metadata=json.dumps(metadata),
+                        payload_metadata=payload_metadata_json
                     )
                     response = await self._stub.PublishEvent(request)
                     
@@ -578,6 +613,7 @@ class EnSyncGrpcEngine:
                         "block": event_response.partition_block,
                         "timestamp": None,
                         "payload": None,
+                        "sender": event_response.sender,
                         "metadata": json.loads(event_response.metadata) if event_response.metadata else {}
                     }
                     
