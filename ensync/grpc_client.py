@@ -470,6 +470,9 @@ class EnSyncGrpcEngine:
         if len(recipients) == 0:
             raise EnSyncError("recipients array cannot be empty", "EnSyncAuthError")
         
+        if payload is None:
+            raise EnSyncError("payload cannot be None", "EnSyncPublishError")
+        
         use_hybrid_encryption = options.get("useHybridEncryption", True) if options else True
         metadata = metadata or {}
         
