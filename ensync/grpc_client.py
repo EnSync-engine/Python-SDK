@@ -288,35 +288,41 @@ class EnSyncGrpcEngine:
                 self.__config["clientHash"] = response.client_hash
                 self._state["isAuthenticated"] = True
                 
-                # Store the current subscriptions before clearing them
-                current_subscriptions = {}
-                
-                # Deep copy the handlers to preserve them properly
-                for event_name, handlers in self._subscriptions.items():
-                    handlers_copy = set()
-                    for handler_obj in handlers:
-                        handlers_copy.add(SubscriptionHandler(
-                            handler_obj.handler,
-                            handler_obj.app_secret_key,
-                            handler_obj.auto_ack
-                        ))
-                    current_subscriptions[event_name] = handlers_copy
-                
-                # Clear existing subscriptions as we'll recreate them
-                self._subscriptions.clear()
-                
-                # Resubscribe to each event and restore its handlers
-                for event_name, handlers in current_subscriptions.items():
-                    try:
-                        logger.info(f"{SERVICE_NAME} Resubscribing to {event_name}")
-                        await self.subscribe(event_name)
-                        
-                        # Restore all handlers for this event
-                        if handlers and len(handlers) > 0:
-                            for handler_obj in handlers:
+                # Resubscribe to events if there were any active subscriptions
+                if self._subscriptions:
+                    # Store the current subscriptions before resubscribing
+                    current_subscriptions = {}
+                    
+                    # Deep copy the handlers to preserve them properly
+                    for event_name, handlers in self._subscriptions.items():
+                        handlers_copy = set()
+                        for handler_obj in handlers:
+                            handlers_copy.add(SubscriptionHandler(
+                                handler_obj.handler,
+                                handler_obj.app_secret_key,
+                                handler_obj.auto_ack
+                            ))
+                        current_subscriptions[event_name] = handlers_copy
+                    
+                    # Clear subscription tasks (they're invalid after reconnection)
+                    self._subscription_tasks.clear()
+                    
+                    # Resubscribe to each event (this will recreate the streams)
+                    for event_name, handlers in current_subscriptions.items():
+                        try:
+                            logger.info(f"{SERVICE_NAME} Resubscribing to {event_name}")
+                            # Get the first handler's options for resubscription
+                            first_handler = next(iter(handlers))
+                            await self.subscribe(event_name, {
+                                "autoAck": first_handler.auto_ack,
+                                "appSecretKey": first_handler.app_secret_key
+                            })
+                            
+                            # Restore all handlers for this event (skip the first one as it's already added)
+                            for handler_obj in list(handlers)[1:]:
                                 self._on(event_name, handler_obj.handler, handler_obj.app_secret_key, handler_obj.auto_ack)
-                    except Exception as error:
-                        logger.error(f"{SERVICE_NAME} Failed to resubscribe to {event_name}: {error}")
+                        except Exception as error:
+                            logger.error(f"{SERVICE_NAME} Failed to resubscribe to {event_name}: {error}")
                 
                 return response
             else:
