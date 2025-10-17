@@ -31,6 +31,7 @@ load_dotenv()
 event_count = 0
 start_time = None
 event_times = []
+processing_times = []  # Track processing completion times
 
 
 async def main():
@@ -107,7 +108,7 @@ async def main():
         
         # Define event handler
         async def handle_event(event):
-            global event_count, event_times
+            global event_count, event_times, processing_times
             event_count += 1
             event_time = time.time()
             event_times.append(event_time)
@@ -141,6 +142,10 @@ async def main():
             ack_res = await subscription.ack(event.get('idem'), event.get('block'))
             print(f"ACK Response: {ack_res}")
             
+            # Track processing completion time
+            processing_complete_time = time.time()
+            processing_times.append(processing_complete_time)
+            
             # Get the sender's public key from the event to send response back
             sender_public_key = event.get('sender')
             
@@ -149,38 +154,38 @@ async def main():
                 return
             
             print("Publishing response...", sender_public_key)
-            response = await client.publish(
-             event.get('eventName'),
-             [sender_public_key],
-             {
-              "conversation_id": payload.get("conversation_id"),
-              "tenant_id": payload.get("tenant_id"),
-              "tool": payload.get("tool"),
-              "result": {
-                "id": "iphone-12-pro-001",
-                "name": "iPhone 12 Pro",
-                "brand": "Apple",
-                "category": "Smartphones",
-                "price": 999.99,
-                "currency": "USD",
-                "storage": "128GB",
-                "color": "Pacific Blue",
-                "display": "6.1-inch Super Retina XDR",
-                "camera": "Triple 12MP camera system",
-                "processor": "A14 Bionic chip",
-                "in_stock": True,
-                "rating": 4.7,
-                "release_year": 2020
-              },
-              "status": "success",
-              "timestamp": int(time.time() * 1000)
-             },
-             {
-              "original_event_id": event.get("eventIdem")
-             }
-            )
+            # response = await client.publish(
+            #  event.get('eventName'),
+            #  [sender_public_key],
+            #  {
+            #   "conversation_id": payload.get("conversation_id"),
+            #   "tenant_id": payload.get("tenant_id"),
+            #   "tool": payload.get("tool"),
+            #   "result": {
+            #     "id": "iphone-12-pro-001",
+            #     "name": "iPhone 12 Pro",
+            #     "brand": "Apple",
+            #     "category": "Smartphones",
+            #     "price": 999.99,
+            #     "currency": "USD",
+            #     "storage": "128GB",
+            #     "color": "Pacific Blue",
+            #     "display": "6.1-inch Super Retina XDR",
+            #     "camera": "Triple 12MP camera system",
+            #     "processor": "A14 Bionic chip",
+            #     "in_stock": True,
+            #     "rating": 4.7,
+            #     "release_year": 2020
+            #   },
+            #   "status": "success",
+            #   "timestamp": int(time.time() * 1000)
+            #  },
+            #  {
+            #   "original_event_id": event.get("eventIdem")
+            #  }
+            # )
 
-            print(f"Req-Response: {response}")
+            # print(f"Req-Response: {response}")
         
         # Register the event handler
         subscription.on(handle_event)
@@ -200,17 +205,40 @@ async def main():
                 print("\nSubscription Statistics:")
                 print(f"  Total Events Received: {event_count}")
                 print(f"  Total Time: {total_time:.2f}s")
-                print(f"  Average Rate: {avg_rate:.2f} events/sec")
+                print(f"  Overall Receive Rate: {avg_rate:.2f} events/sec")
                 
+                # Calculate receive rate (instantaneous)
                 if len(event_times) > 1:
-                    intervals = [event_times[i] - event_times[i-1] for i in range(1, len(event_times))]
-                    avg_interval = sum(intervals) / len(intervals)
-                    min_interval = min(intervals)
-                    max_interval = max(intervals)
+                    receive_intervals = [event_times[i] - event_times[i-1] for i in range(1, len(event_times))]
+                    avg_receive_interval = sum(receive_intervals) / len(receive_intervals)
+                    min_receive_interval = min(receive_intervals)
+                    max_receive_interval = max(receive_intervals)
+                    instantaneous_receive_rate = 1 / avg_receive_interval if avg_receive_interval > 0 else 0
                     
-                    print(f"  Average Interval: {avg_interval:.2f}s")
-                    print(f"  Min Interval: {min_interval:.2f}s")
-                    print(f"  Max Interval: {max_interval:.2f}s")
+                    print(f"  Instantaneous Receive Rate: {instantaneous_receive_rate:.2f} events/sec")
+                    print(f"  Average Receive Interval: {avg_receive_interval:.3f}s")
+                    print(f"  Min Receive Interval: {min_receive_interval:.3f}s")
+                    print(f"  Max Receive Interval: {max_receive_interval:.3f}s")
+                
+                # Calculate processing rate (instantaneous)
+                if len(processing_times) > 1:
+                    processing_intervals = [processing_times[i] - processing_times[i-1] for i in range(1, len(processing_times))]
+                    avg_processing_interval = sum(processing_intervals) / len(processing_intervals)
+                    instantaneous_processing_rate = 1 / avg_processing_interval if avg_processing_interval > 0 else 0
+                    
+                    print(f"  Instantaneous Processing Rate: {instantaneous_processing_rate:.2f} events/sec")
+                    print(f"  Average Processing Interval: {avg_processing_interval:.3f}s")
+                
+                # Calculate average processing time per event
+                if len(event_times) == len(processing_times):
+                    processing_durations = [processing_times[i] - event_times[i] for i in range(len(event_times))]
+                    avg_processing_duration = sum(processing_durations) / len(processing_durations)
+                    min_processing_duration = min(processing_durations)
+                    max_processing_duration = max(processing_durations)
+                    
+                    print(f"  Average Processing Time: {avg_processing_duration*1000:.2f}ms")
+                    print(f"  Min Processing Time: {min_processing_duration*1000:.2f}ms")
+                    print(f"  Max Processing Time: {max_processing_duration*1000:.2f}ms")
             else:
                 print("\nNo events received during this session.")
             

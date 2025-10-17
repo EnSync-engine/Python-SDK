@@ -82,9 +82,10 @@ async def main():
         # Track statistics
         durations = []
         total_start_time = time.time()
+        publish_times = []  # Track when each event is published
         
         # Publish test events
-        num_events = 5
+        num_events = 1
         print(f"Publishing {num_events} test events...")
         print("-" * 60)
         
@@ -93,11 +94,14 @@ async def main():
             try:
                 # Create payload
                 payload = {
-                    "meter_per_seconds": random.randint(0, 30),
-                    "temperature": random.uniform(20.0, 30.0),
-                    "humidity": random.uniform(40.0, 70.0),
-                    "timestamp": int(time.time() * 1000),
-                    "event_index": index + 1,
+                    "data": {
+                        "lol": "hi"
+                    },
+                    "count": random.randint(0, 30),
+                    "items": [1,2,3],
+                    "value": None,
+                    "active": True,
+                    "lil": "lol",
                     "message": f"Test event {index + 1} via gRPC"
                 }
                 
@@ -112,7 +116,9 @@ async def main():
                     payload,
                 )
                 
-                duration = (time.time() - start) * 1000
+                publish_time = time.time()
+                publish_times.append(publish_time)
+                duration = (publish_time - start) * 1000
                 durations.append(duration)
                 
                 print(f"  ✓ Published successfully")
@@ -137,6 +143,15 @@ async def main():
         avg_duration = sum(durations) / len(durations) if durations else 0
         min_duration = min(durations) if durations else 0
         max_duration = max(durations) if durations else 0
+        events_per_sec = (num_events / (total_duration / 1000)) if total_duration > 0 else 0
+        
+        # Calculate instantaneous throughput (events published per second)
+        if len(publish_times) > 1:
+            publish_intervals = [publish_times[i] - publish_times[i-1] for i in range(1, len(publish_times))]
+            avg_publish_interval = sum(publish_intervals) / len(publish_intervals)
+            instantaneous_rate = 1 / avg_publish_interval if avg_publish_interval > 0 else 0
+        else:
+            instantaneous_rate = 0
         
         print("\n" + "=" * 60)
         print("Publishing Statistics:")
@@ -145,7 +160,9 @@ async def main():
         print(f"  Average Duration: {avg_duration:.2f}ms")
         print(f"  Min Duration: {min_duration:.2f}ms")
         print(f"  Max Duration: {max_duration:.2f}ms")
-        print(f"  Events/sec: {(num_events / (total_duration / 1000)):.2f}")
+        print(f"  Overall Rate: {events_per_sec:.2f} events/sec")
+        if instantaneous_rate > 0:
+            print(f"  Instantaneous Rate: {instantaneous_rate:.2f} events/sec")
         print("=" * 60)
         
         # Close connection
