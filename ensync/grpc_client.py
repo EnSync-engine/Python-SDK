@@ -608,9 +608,12 @@ class EnSyncGrpcEngine:
     async def _handle_event_stream(self, event_name: str, request, options: Dict[str, Any]):
         """Handle incoming event stream for a subscription."""
         try:
+            logger.info(f"{SERVICE_NAME} Starting event stream for '{event_name}'")
             async for event_response in self._stub.Subscribe(request):
+                logger.info(f"{SERVICE_NAME} Received event on stream '{event_name}': {event_response.event_idem}")
                 if event_name in self._subscriptions:
                     handlers = self._subscriptions[event_name]
+                    logger.info(f"{SERVICE_NAME} Found {len(handlers)} handler(s) for '{event_name}'")
                     
                     # Create event data structure
                     event_data = {
@@ -626,6 +629,7 @@ class EnSyncGrpcEngine:
                     # Process handlers sequentially
                     for handler_obj in handlers:
                         try:
+                            logger.info(f"{SERVICE_NAME} Decrypting payload for event {event_response.event_idem}")
                             # Decrypt the payload
                             decryption_result = self._decrypt_payload(
                                 event_response.payload,
@@ -637,11 +641,14 @@ class EnSyncGrpcEngine:
                                 continue
                             
                             event_data["payload"] = decryption_result["payload"]
+                            logger.info(f"{SERVICE_NAME} Calling event handler for {event_response.event_idem}")
                             
                             # Call handler
                             result = handler_obj.handler(event_data)
                             if asyncio.iscoroutine(result):
                                 await result
+                            
+                            logger.info(f"{SERVICE_NAME} Handler completed for {event_response.event_idem}")
                             
                             # Auto-acknowledge if enabled
                             if handler_obj.auto_ack and event_data.get("idem") and event_data.get("block"):

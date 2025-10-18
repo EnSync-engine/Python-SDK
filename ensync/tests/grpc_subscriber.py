@@ -108,6 +108,7 @@ async def main():
         
         # Define event handler
         async def handle_event(event):
+            print("\nEvent received:", event)
             global event_count, event_times, processing_times
             event_count += 1
             event_time = time.time()
