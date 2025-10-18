@@ -85,7 +85,7 @@ async def main():
         publish_times = []  # Track when each event is published
         
         # Publish test events
-        num_events = 1
+        num_events = 10
         print(f"Publishing {num_events} test events...")
         print("-" * 60)
         
@@ -101,7 +101,6 @@ async def main():
                     "items": [1,2,3],
                     "value": None,
                     "active": True,
-                    "lil": "lol",
                     "message": f"Test event {index + 1} via gRPC"
                 }
                 
@@ -143,26 +142,24 @@ async def main():
         avg_duration = sum(durations) / len(durations) if durations else 0
         min_duration = min(durations) if durations else 0
         max_duration = max(durations) if durations else 0
-        events_per_sec = (num_events / (total_duration / 1000)) if total_duration > 0 else 0
         
-        # Calculate instantaneous throughput (events published per second)
-        if len(publish_times) > 1:
-            publish_intervals = [publish_times[i] - publish_times[i-1] for i in range(1, len(publish_times))]
-            avg_publish_interval = sum(publish_intervals) / len(publish_intervals)
-            instantaneous_rate = 1 / avg_publish_interval if avg_publish_interval > 0 else 0
-        else:
-            instantaneous_rate = 0
+        # Actual rate (including sleep delays)
+        actual_rate = (num_events / (total_duration / 1000)) if total_duration > 0 else 0
+        
+        # Publishing throughput (based on actual publish durations, excluding sleep)
+        total_publish_time = sum(durations)
+        publishing_throughput = (num_events / (total_publish_time / 1000)) if total_publish_time > 0 else 0
         
         print("\n" + "=" * 60)
         print("Publishing Statistics:")
         print(f"  Total Events: {num_events}")
-        print(f"  Total Time: {total_duration:.2f}ms")
+        print(f"  Total Time: {total_duration:.2f}ms ({total_duration/1000:.2f}s)")
+        print(f"  Total Publish Time: {total_publish_time:.2f}ms (excluding delays)")
         print(f"  Average Duration: {avg_duration:.2f}ms")
         print(f"  Min Duration: {min_duration:.2f}ms")
         print(f"  Max Duration: {max_duration:.2f}ms")
-        print(f"  Overall Rate: {events_per_sec:.2f} events/sec")
-        if instantaneous_rate > 0:
-            print(f"  Instantaneous Rate: {instantaneous_rate:.2f} events/sec")
+        print(f"  Actual Rate: {actual_rate:.2f} events/sec (including delays)")
+        print(f"  Publishing Throughput: {publishing_throughput:.2f} events/sec (pure publish speed)")
         print("=" * 60)
         
         # Close connection
