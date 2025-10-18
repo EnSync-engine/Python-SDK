@@ -83,59 +83,77 @@ async def main():
         durations = []
         total_start_time = time.time()
         publish_times = []  # Track when each event is published
+        successful_publishes = 0
+        failed_publishes = 0
         
         # Publish test events
-        num_events = 10
-        print(f"Publishing {num_events} test events...")
+        num_events = 100000
+        concurrency = 100  # Number of concurrent publish operations
+        print(f"Publishing {num_events} test events with concurrency={concurrency}...")
         print("-" * 60)
         
-        for index in range(num_events):
-            start = time.time()
-            try:
-                # Create payload
-                payload = {
-                    "data": {
-                        "lol": "hi"
-                    },
-                    "count": random.randint(0, 30),
-                    "items": [1,2,3],
-                    "value": None,
-                    "active": True,
-                    "message": f"Test event {index + 1} via gRPC"
-                }
-                
-                # Publish event
-                print(f"\nEvent {index + 1}:")
-                print(f"  Publishing to: {event_name}")
-                print(f"  Payload: {payload}")
-                
-                response = await client.publish(
-                    event_name,
-                    [recipient],
-                    payload,
-                )
-                
-                publish_time = time.time()
-                publish_times.append(publish_time)
-                duration = (publish_time - start) * 1000
-                durations.append(duration)
-                
-                print(f"  ✓ Published successfully")
-                print(f"  Response: {response}")
-                print(f"  Duration: {duration:.2f}ms")
-                
-                # Wait between events
-                if index < num_events - 1:
-                    await asyncio.sleep(1)
-                
-            except EnSyncError as e:
-                print(f"  ✗ Failed to publish event {index + 1}: {e}")
-                duration = (time.time() - start) * 1000
-                durations.append(duration)
-            except Exception as e:
-                print(f"  ✗ Unexpected error publishing event {index + 1}: {e}")
-                duration = (time.time() - start) * 1000
-                durations.append(duration)
+        # Create a semaphore to limit concurrency
+        semaphore = asyncio.Semaphore(concurrency)
+        
+        async def publish_event(index):
+            """Publish a single event with concurrency control."""
+            nonlocal successful_publishes, failed_publishes
+            async with semaphore:
+                start = time.time()
+                try:
+                    # Create payload
+                    payload = {
+                        "data": {
+                            "lol": "hi"
+                        },
+                        "count": random.randint(0, 30),
+                        "items": [1,2,3],
+                        "value": None,
+                        "active": True,
+                        "message": f"Test event {index + 1} via gRPC"
+                    }
+                    
+                    # Publish event
+                    response = await client.publish(
+                        event_name,
+                        [recipient],
+                        payload,
+                    )
+                    
+                    publish_time = time.time()
+                    publish_times.append(publish_time)
+                    duration = (publish_time - start) * 1000
+                    durations.append(duration)
+                    successful_publishes += 1
+                    
+                    # Print progress every 1000 events
+                    if (index + 1) % 1000 == 0:
+                        print(f"  Progress: {index + 1}/{num_events} events published")
+                    
+                    return {"success": True, "index": index, "duration": duration}
+                    
+                except EnSyncError as e:
+                    duration = (time.time() - start) * 1000
+                    durations.append(duration)
+                    failed_publishes += 1
+                    if failed_publishes <= 10:  # Only print first 10 errors
+                        print(f"  ✗ Failed to publish event {index + 1}: {e}")
+                    return {"success": False, "index": index, "duration": duration, "error": str(e)}
+                except Exception as e:
+                    duration = (time.time() - start) * 1000
+                    durations.append(duration)
+                    failed_publishes += 1
+                    if failed_publishes <= 10:  # Only print first 10 errors
+                        print(f"  ✗ Unexpected error publishing event {index + 1}: {e}")
+                    return {"success": False, "index": index, "duration": duration, "error": str(e)}
+        
+        # Create all publish tasks
+        tasks = [publish_event(i) for i in range(num_events)]
+        
+        # Execute all tasks concurrently
+        print(f"Starting concurrent publishing...")
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+        print(f"Completed: {successful_publishes} successful, {failed_publishes} failed")
         
         # Calculate statistics
         total_duration = (time.time() - total_start_time) * 1000
