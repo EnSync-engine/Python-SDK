@@ -82,6 +82,7 @@ engine = EnSyncEngine(url, options=None)
 
 | Option | Type | Default | Description |
 |--------|------|---------|-------------|
+| `enableLogging` | `bool` | `False` | Set to true to enable debug logging |
 | `disable_tls` | `bool` | `False` | Set to true to disable TLS |
 | `reconnect_interval` | `int` | `5000` | Reconnection interval in ms |
 | `max_reconnect_attempts` | `int` | `10` | Maximum reconnection attempts |
@@ -96,6 +97,11 @@ engine = EnSyncEngine(url, options=None)
 ```python
 # Initialize the engine (gRPC with TLS)
 engine = EnSyncEngine("grpcs://node.gms.ensync.cloud")
+
+# Enable logs for debugging
+engine_verbose = EnSyncEngine("grpcs://node.gms.ensync.cloud", {
+    "enableLogging": True
+})
 
 # Create a client
 client = await engine.create_client("your-app-key")

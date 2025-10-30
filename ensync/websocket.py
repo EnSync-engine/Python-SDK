@@ -18,8 +18,10 @@ from .ecc_crypto import (
 )
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("EnSync WS:")
+logger.setLevel(logging.CRITICAL + 1)  # Disable all logging by default
+logger.addHandler(logging.NullHandler())
+logger.propagate = False
 
 SERVICE_NAME = ""
 
@@ -164,6 +166,17 @@ class EnSyncEngine:
             options: Configuration options
         """
         options = options or {}
+        
+        # Enable logging if requested
+        enable_logging = options.get("enableLogging", False)
+        if enable_logging:
+            logging.basicConfig(level=logging.INFO)
+            logger.setLevel(logging.INFO)
+            # Remove NullHandler and add StreamHandler if needed
+            logger.handlers.clear()
+            handler = logging.StreamHandler()
+            handler.setFormatter(logging.Formatter('%(name)s - %(levelname)s - %(message)s'))
+            logger.addHandler(handler)
         
         # Configuration (private, internal use only)
         self.__config = {

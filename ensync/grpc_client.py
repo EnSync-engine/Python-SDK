@@ -25,8 +25,10 @@ except ImportError as e:
     raise ImportError(f"Failed to import protobuf modules. Please run: python -m grpc_tools.protoc -I. --python_out=./ensync --grpc_python_out=./ensync ensync.proto") from e
 
 # Configure logging
-logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("EnSync:gRPC")
+logger.setLevel(logging.CRITICAL + 1)  # Disable all logging by default
+logger.addHandler(logging.NullHandler())
+logger.propagate = False
 
 SERVICE_NAME = ""
 
@@ -158,6 +160,17 @@ class EnSyncGrpcEngine:
             options: Configuration options
         """
         options = options or {}
+        
+        # Enable logging if requested
+        enable_logging = options.get("enableLogging", False)
+        if enable_logging:
+            logging.basicConfig(level=logging.INFO)
+            logger.setLevel(logging.INFO)
+            # Remove NullHandler and add StreamHandler if needed
+            logger.handlers.clear()
+            handler = logging.StreamHandler()
+            handler.setFormatter(logging.Formatter('%(name)s - %(levelname)s - %(message)s'))
+            logger.addHandler(handler)
         
         # Configuration (private, internal use only)
         self.__config = {
@@ -608,12 +621,9 @@ class EnSyncGrpcEngine:
     async def _handle_event_stream(self, event_name: str, request, options: Dict[str, Any]):
         """Handle incoming event stream for a subscription."""
         try:
-            logger.info(f"{SERVICE_NAME} Starting event stream for '{event_name}'")
             async for event_response in self._stub.Subscribe(request):
-                logger.info(f"{SERVICE_NAME} Received event on stream '{event_name}': {event_response.event_idem}")
                 if event_name in self._subscriptions:
                     handlers = self._subscriptions[event_name]
-                    logger.info(f"{SERVICE_NAME} Found {len(handlers)} handler(s) for '{event_name}'")
                     
                     # Create event data structure
                     event_data = {
@@ -629,7 +639,6 @@ class EnSyncGrpcEngine:
                     # Process handlers sequentially
                     for handler_obj in handlers:
                         try:
-                            logger.info(f"{SERVICE_NAME} Decrypting payload for event {event_response.event_idem}")
                             # Decrypt the payload
                             decryption_result = self._decrypt_payload(
                                 event_response.payload,
@@ -641,14 +650,11 @@ class EnSyncGrpcEngine:
                                 continue
                             
                             event_data["payload"] = decryption_result["payload"]
-                            logger.info(f"{SERVICE_NAME} Calling event handler for {event_response.event_idem}")
                             
                             # Call handler
                             result = handler_obj.handler(event_data)
                             if asyncio.iscoroutine(result):
                                 await result
-                            
-                            logger.info(f"{SERVICE_NAME} Handler completed for {event_response.event_idem}")
                             
                             # Auto-acknowledge if enabled
                             if handler_obj.auto_ack and event_data.get("idem") and event_data.get("block"):
