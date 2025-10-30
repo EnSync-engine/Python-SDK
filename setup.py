@@ -2,8 +2,8 @@ import os
 from setuptools import setup, find_packages
 
 setup(
-    name="ensync-sdk",
-    version="0.3.4",
+    name="ensync_sdk",
+    version="0.3.6",
     packages=["ensync"],
     package_dir={"ensync": "ensync"},
     py_modules=[],
