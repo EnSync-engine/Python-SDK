@@ -190,4 +190,4 @@ If you were using the old `ensync-sdk` (v0.3.x) package:
 
 - GitHub: https://github.com/EnSync-engine/Python-SDK
 - Documentation: https://ensync.cloud
-- Email: info@ensync.io
+- Email: dev@ensync.cloud

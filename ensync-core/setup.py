@@ -3,13 +3,13 @@ from setuptools import setup, find_packages
 
 setup(
     name="ensync-core",
-    version="0.1.0",
+    version="0.1.1",
     packages=find_packages(),
     install_requires=[
         "pynacl>=1.5.0",
     ],
     author="EnSync Team",
-    author_email="info@ensync.io",
+    author_email="dev@ensync.cloud",
     description="Core utilities for EnSync SDK - encryption, decryption, and error handling",
     long_description=open("README.md").read() if os.path.exists("README.md") else "",
     long_description_content_type="text/markdown",

@@ -16,7 +16,7 @@ setup(
         ]
     },
     author="EnSync Team",
-    author_email="info@ensync.io",
+    author_email="dev@ensync.cloud",
     description="Python SDK for EnSync Engine - high-performance real-time messaging via gRPC",
     long_description=open("README.md").read() if os.path.exists("README.md") else "",
     long_description_content_type="text/markdown",

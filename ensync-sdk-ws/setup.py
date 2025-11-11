@@ -15,7 +15,7 @@ setup(
         ]
     },
     author="EnSync Team",
-    author_email="info@ensync.io",
+    author_email="dev@ensync.cloud",
     description="WebSocket client for EnSync Engine - real-time messaging over WebSocket",
     long_description=open("README.md").read() if os.path.exists("README.md") else "",
     long_description_content_type="text/markdown",
