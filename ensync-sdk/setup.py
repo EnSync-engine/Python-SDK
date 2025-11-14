@@ -3,7 +3,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="ensync-sdk",
-    version="0.4.0",
+    version="0.4.2",
     packages=find_packages(),
     install_requires=[
         "ensync-core>=0.1.0",

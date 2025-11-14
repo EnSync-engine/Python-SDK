@@ -34,6 +34,77 @@ class SubscriptionHandler:
         self.auto_ack = auto_ack
 
 
+class SubscriptionDecorator:
+    """
+    Decorator object that provides both handler registration and subscription control.
+    
+    This allows the Pythonic pattern:
+        subscription = client.subscribe("message/name")
+        
+        @subscription.handler
+        async def my_handler(message):
+            print(message)
+        
+        await subscription.pause()
+    """
+    
+    def __init__(self, engine, message_name: str, options: Dict[str, Any]):
+        self._engine = engine
+        self._message_name = message_name
+        self._options = options
+        self._subscription = None
+    
+    def handler(self, func: Callable) -> Callable:
+        """
+        Decorator to register a handler function for this subscription.
+        
+        Args:
+            func: Async function to handle incoming messages
+            
+        Returns:
+            The original function (allows stacking decorators)
+        """
+        # Register handler immediately
+        app_secret_key = self._options.get("appSecretKey")
+        auto_ack = self._options.get("autoAck", True)
+        self._engine._on(self._message_name, func, app_secret_key, auto_ack)
+        return func
+    
+    async def _ensure_subscription(self):
+        """Ensure the underlying subscription exists."""
+        if self._subscription is None:
+            self._subscription = await self._engine._subscribe_internal(self._message_name, self._options)
+        return self._subscription
+    
+    async def ack(self, message_idem: str, block: str) -> str:
+        """Acknowledge a message."""
+        return await self._engine._ack(message_idem, block, self._message_name)
+    
+    async def pause(self, reason: str = ""):
+        """Pause message processing."""
+        return await self._engine._pause_processing(self._message_name, reason)
+    
+    async def resume(self):
+        """Resume message processing."""
+        return await self._engine._continue_processing(self._message_name)
+    
+    async def defer(self, message_idem: str, delay_ms: int = 1000, reason: str = ""):
+        """Defer a message for later processing."""
+        return await self._engine._defer_message(message_idem, self._message_name, delay_ms, reason)
+    
+    async def discard(self, message_idem: str, reason: str = ""):
+        """Discard a message permanently."""
+        return await self._engine._discard_message(message_idem, self._message_name, reason)
+    
+    async def replay(self, message_idem: str):
+        """Replay a specific message by its ID."""
+        return await self._engine._replay_message(message_idem, self._message_name)
+    
+    async def unsubscribe(self):
+        """Unsubscribe from this message."""
+        return await self._engine._unsubscribe(self._message_name)
+
+
 class WebSocketSubscription:
     """Represents a WebSocket subscription to an message."""
     
@@ -637,8 +708,35 @@ class EnSyncEngine:
         except Exception as error:
             raise EnSyncError(str(error), "EnSyncPublishError")
     
-    async def subscribe(self, message_name: str, options: Dict[str, Any] = None):
-        """Subscribe to an message."""
+    def subscribe(self, message_name: str, **kwargs):
+        """
+        Create a subscription decorator that returns a subscription object.
+
+        Args:
+            message_name (str): The name of the message to subscribe to.
+            **kwargs: Subscription options like `auto_ack` and `app_decrypt_key`.
+
+        Returns:
+            SubscriptionDecorator: Object with handler decorator and subscription methods
+
+        Example:
+            subscription = client.subscribe("my.message")
+            
+            @subscription.handler
+            async def handle_my_message(message):
+                print(f"Received: {message['payload']}")
+            
+            # Access subscription methods
+            await subscription.pause()
+        """
+        options = {
+            "autoAck": kwargs.get("auto_ack", True),
+            "appSecretKey": kwargs.get("app_decrypt_key")
+        }
+        return SubscriptionDecorator(self, message_name, options)
+    
+    async def _subscribe_internal(self, message_name: str, options: Dict[str, Any] = None):
+        """Internal method to actually subscribe via WebSocket."""
         if not self._state["isAuthenticated"]:
             raise EnSyncError("Not authenticated", "EnSyncAuthError")
         

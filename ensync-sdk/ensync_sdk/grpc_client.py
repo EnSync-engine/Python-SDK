@@ -37,28 +37,105 @@ SERVICE_NAME = ""
 
 class SubscriptionHandler:
     """Wrapper for subscription handler with metadata."""
-    def __init__(self, handler: Callable, app_secret_key: Optional[str], auto_ack: bool):
+    def __init__(self, handler: Callable, app_decrypt_key: Optional[str], auto_ack: bool):
         self.handler = handler
-        self.app_secret_key = app_secret_key
+        self.app_decrypt_key = app_decrypt_key
         self.auto_ack = auto_ack
+
+
+class SubscriptionDecorator:
+    """
+    Decorator object that provides both handler registration and subscription control.
+    
+    This allows the Pythonic pattern:
+        subscription = client.subscribe("message/name")
+        
+        @subscription.handler
+        async def my_handler(message):
+            print(message)
+        
+        await subscription.pause()
+    """
+    
+    def __init__(self, client, message_name: str, options: Dict[str, Any]):
+        self._client = client
+        self._message_name = message_name
+        self._options = options
+        self._subscription = None
+    
+    def handler(self, func: Callable) -> Callable:
+        """
+        Decorator to register a handler function for this subscription.
+        
+        Args:
+            func: Async function to handle incoming messages
+            
+        Returns:
+            The original function (allows stacking decorators)
+        """
+        # Store the handler to be registered when subscription is created
+        self._client._decorated_handlers.append((self._message_name, func, self._options))
+        return func
+    
+    async def _ensure_subscription(self):
+        """Ensure the underlying subscription exists."""
+        if self._subscription is None:
+            # Create the subscription if it doesn't exist
+            self._subscription = await self._client._create_subscription(self._message_name, self._options)
+        return self._subscription
+    
+    async def ack(self, message_idem: str, block: int) -> str:
+        """Acknowledge a message."""
+        sub = await self._ensure_subscription()
+        return await sub.ack(message_idem, block)
+    
+    async def pause(self, reason: str = None):
+        """Pause message processing."""
+        sub = await self._ensure_subscription()
+        return await sub.pause(reason)
+    
+    async def resume(self):
+        """Resume message processing."""
+        sub = await self._ensure_subscription()
+        return await sub.resume()
+    
+    async def defer(self, message_idem: str, delay_ms: int = 5000, reason: str = None):
+        """Defer a message for later processing."""
+        sub = await self._ensure_subscription()
+        return await sub.defer(message_idem, delay_ms, reason)
+    
+    async def discard(self, message_idem: str, reason: str = None):
+        """Discard a message permanently."""
+        sub = await self._ensure_subscription()
+        return await sub.discard(message_idem, reason)
+    
+    async def replay(self, message_idem: str):
+        """Replay a specific message by its ID."""
+        sub = await self._ensure_subscription()
+        return await sub.replay(message_idem)
+    
+    async def unsubscribe(self):
+        """Unsubscribe from this message."""
+        sub = await self._ensure_subscription()
+        return await sub.unsubscribe()
 
 
 class GrpcSubscription:
     """Represents a gRPC subscription to an message."""
     
-    def __init__(self, message_name: str, client, app_secret_key: str = None, auto_ack: bool = True):
+    def __init__(self, message_name: str, client, app_decrypt_key: str = None, auto_ack: bool = True):
         """
         Initialize a subscription.
         
         Args:
             message_name: The name of the message to subscribe to
             client: The EnSyncGrpcClient instance
-            app_secret_key: The secret key for decryption
+            app_decrypt_key: The secret key for decryption
             auto_ack: Whether to automatically acknowledge messages
         """
         self.message_name = message_name
         self._client = client
-        self._app_secret_key = app_secret_key
+        self._app_decrypt_key = app_decrypt_key
         self._auto_ack = auto_ack
     
     def on(self, handler: Callable) -> Callable:
@@ -71,7 +148,7 @@ class GrpcSubscription:
         Returns:
             Function to remove the handler
         """
-        return self._client._on(self.message_name, handler, self._app_secret_key, self._auto_ack)
+        return self._client._on(self.message_name, handler, self._app_decrypt_key, self._auto_ack)
     
     async def ack(self, message_idem: str, block: int) -> str:
         """
@@ -139,7 +216,7 @@ class GrpcSubscription:
         Returns:
             Replayed message data
         """
-        return await self._client._replay(message_idem, self.message_name, self._app_secret_key)
+        return await self._client._replay(message_idem, self.message_name, self._app_decrypt_key)
     
     async def unsubscribe(self):
         """Unsubscribe from this message."""
@@ -361,7 +438,7 @@ class EnSyncGrpcClient:
         if self._subscriptions:
             for message_name, handlers_set in self._subscriptions.items():
                 for handler_obj in handlers_set:
-                    opts = {"auto_ack": handler_obj.auto_ack, "app_secret_key": handler_obj.app_secret_key}
+                    opts = {"auto_ack": handler_obj.auto_ack, "app_decrypt_key": handler_obj.app_decrypt_key}
                     all_handlers_to_process.append((message_name, handler_obj.handler, opts))
 
         # Clear previous subscription state before re-establishing
@@ -384,9 +461,9 @@ class EnSyncGrpcClient:
 
         # Now, register all handlers to their respective (now active) subscriptions
         for message_name, handler, kwargs in all_handlers_to_process:
-            app_secret_key = kwargs.get("app_secret_key")
+            app_decrypt_key = kwargs.get("app_decrypt_key")
             auto_ack = kwargs.get("auto_ack", True)
-            self._on(message_name, handler, app_secret_key, auto_ack)
+            self._on(message_name, handler, app_decrypt_key, auto_ack)
     
     async def _handle_close(self, reason: str):
         """Handle gRPC connection close messages and trigger reconnection if configured."""
@@ -416,10 +493,10 @@ class EnSyncGrpcClient:
             logger.error(f"{SERVICE_NAME} Max reconnection attempts reached. Giving up.")
             self._state["shouldReconnect"] = False
     
-    def _decrypt_payload(self, encrypted_payload: str, app_secret_key: Optional[str] = None) -> Dict[str, Any]:
+    def _decrypt_payload(self, encrypted_payload: str, app_decrypt_key: Optional[str] = None) -> Dict[str, Any]:
         """Decrypt an encrypted payload."""
         try:
-            decryption_key = app_secret_key or self._config.get("appSecretKey") or self._config.get("clientHash")
+            decryption_key = app_decrypt_key or self._config.get("appSecretKey") or self._config.get("clientHash")
             
             if not decryption_key:
                 logger.error(f"{SERVICE_NAME} No decryption key available")
@@ -616,25 +693,26 @@ class EnSyncGrpcClient:
     
     def subscribe(self, message_name: str, **kwargs):
         """
-        Decorator to register an message handler for a subscription.
-
-        This will automatically manage the subscription lifecycle. When the client
-        connects, it will subscribe to the message and attach this handler.
+        Create a subscription decorator that returns a subscription object.
 
         Args:
             message_name (str): The name of the message to subscribe to.
-            **kwargs: Subscription options like `auto_ack` and `app_secret_key`.
+            **kwargs: Subscription options like `auto_ack` and `app_decrypt_key`.
+
+        Returns:
+            SubscriptionDecorator: Object with handler decorator and subscription methods
 
         Example:
-            @engine.subscribe("my.message", auto_ack=True)
+            subscription = client.subscribe("my.message")
+            
+            @subscription.handler
             async def handle_my_message(message):
                 print(f"Received: {message['payload']}")
+            
+            # Access subscription methods
+            await subscription.pause()
         """
-        def decorator(handler: Callable):
-            self._decorated_handlers.append((message_name, handler, kwargs))
-            # To allow stacking decorators, we return the original handler.
-            return handler
-        return decorator
+        return SubscriptionDecorator(self, message_name, kwargs)
 
     async def _create_subscription(self, message_name: str, options: Dict[str, Any] = None):
         """
@@ -710,7 +788,7 @@ class EnSyncGrpcClient:
                             # Decrypt the payload
                             decryption_result = self._decrypt_payload(
                                 message_response.payload,
-                                handler_obj.app_secret_key
+                                handler_obj.app_decrypt_key
                             )
                             
                             if not decryption_result.get("success"):
@@ -752,12 +830,12 @@ class EnSyncGrpcClient:
             if message_name in self._subscription_tasks:
                 del self._subscription_tasks[message_name]
     
-    def _on(self, message_name: str, handler: Callable, app_secret_key: Optional[str], auto_ack: bool = True):
+    def _on(self, message_name: str, handler: Callable, app_decrypt_key: Optional[str], auto_ack: bool = True):
         """Add an message handler for a subscribed message."""
         if message_name not in self._subscriptions:
             self._subscriptions[message_name] = set()
         
-        wrapped_handler = SubscriptionHandler(handler, app_secret_key, auto_ack)
+        wrapped_handler = SubscriptionHandler(handler, app_decrypt_key, auto_ack)
         self._subscriptions[message_name].add(wrapped_handler)
         
         def remove_handler():
@@ -970,7 +1048,7 @@ class EnSyncGrpcClient:
                 raise error
             raise EnSyncError(str(error), "EnSyncPauseError")
     
-    async def _replay(self, message_idem: str, message_name: str, app_secret_key: Optional[str] = None):
+    async def _replay(self, message_idem: str, message_name: str, app_decrypt_key: Optional[str] = None):
         """Request a specific message to be replayed."""
         if not self._state["isAuthenticated"]:
             raise EnSyncError("Not authenticated", "EnSyncAuthError")
@@ -990,7 +1068,7 @@ class EnSyncGrpcClient:
                 raise EnSyncError(response.message, "EnSyncReplayError")
             
             # Decrypt the message data
-            decryption_result = self._decrypt_payload(response.message_data, app_secret_key)
+            decryption_result = self._decrypt_payload(response.message_data, app_decrypt_key)
             
             if not decryption_result.get("success"):
                 raise EnSyncError("Failed to decrypt replayed message", "EnSyncReplayError")

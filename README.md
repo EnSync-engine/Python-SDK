@@ -166,11 +166,11 @@ async def handle_event(event):
     print(f"Received: {event['payload']}")
     
     # Reply back to the sender
-    sender_public_key = event.get('sender')
-    if sender_public_key:
+    sender_app_id = event.get('sender')
+    if sender_app_id:
         await client.publish(
             event.get('eventName'),
-            [sender_public_key],  # Send back to the original sender
+            [sender_app_id],  # Send back to the original sender
             {"status": "received", "response": "Processing complete"}
         )
 ```
@@ -328,13 +328,13 @@ async def quick_start():
 
         # 2. Publish an event
         await client.publish(
-            "orders/status/updated",
+            "orders/status/update",
             ["appId"],  # The appId of the receiving party
             {"order_id": "order-123", "status": "completed"}
         )
 
         # 3. Subscribe to events
-        subscription = await client.subscribe("orders/status/updated")
+        subscription = await client.subscribe("orders/status/update")
         
         # 4. Handle incoming events
         async def handle_event(event):
@@ -383,7 +383,7 @@ async def publishing_example():
 
     # Basic publish - returns event ID
     event_id = await client.publish(
-        "notifications/email/sent",
+        "notifications/email/send",
         ["appId"],  # The appId of the receiving party
         {"to": "user@example.com", "subject": "Welcome!"}
     )
@@ -391,7 +391,7 @@ async def publishing_example():
 
     # With metadata
     event_id = await client.publish(
-        "notifications/email/sent",
+        "notifications/email/send",
         ["appId"],  # The appId of the receiving party
         {"to": "user@example.com", "subject": "Welcome!"},
         {"source": "email-service", "priority": "high"}

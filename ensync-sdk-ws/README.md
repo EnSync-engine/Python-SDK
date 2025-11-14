@@ -19,20 +19,23 @@ engine = EnSyncEngine("wss://node.ensync.cloud")
 # Create authenticated client
 client = await engine.create_client("your-app-key")
 
-# Publish an event
+# Publish a message
 await client.publish(
-    "orders/status/updated",
-    ["recipient-app-id"],
+    "orders/status/update",
+    ["appId"],
     {"order_id": "123", "status": "completed"}
 )
 
-# Subscribe to events
-subscription = await client.subscribe("orders/status/updated")
+# Subscribe to messages with decorator pattern
+subscription = client.subscribe("orders/status")
 
-async def handle_event(event):
-    print(f"Received: {event['payload']}")
+@subscription.handler
+async def handle_message(message):
+    print(f"Received: {message['payload']}")
 
-subscription.on(handle_event)
+# Access subscription control methods
+await subscription.pause("Maintenance")
+await subscription.resume()
 ```
 
 ## Features
@@ -41,9 +44,9 @@ subscription.on(handle_event)
 - **Automatic Reconnection**: Handles connection failures gracefully
 - **TLS Support**: Secure WebSocket (WSS) connections
 - **Hybrid Encryption**: End-to-end encryption with Ed25519 and AES-GCM
-- **Event Acknowledgment**: Manual or automatic event acknowledgment
-- **Event Replay**: Request historical events by ID
-- **Pause/Resume**: Control event flow with subscription pause/continue
+- **Event Acknowledgment**: Manual or automatic message acknowledgment
+- **Event Replay**: Request historical messages by ID
+- **Pause/Resume**: Control message flow with subscription pause/continue
 
 ## Connection Options
 

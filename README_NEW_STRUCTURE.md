@@ -69,12 +69,12 @@ from ensync_sdk import EnSyncEngine
 engine = EnSyncEngine("node.ensync.cloud")
 client = await engine.create_client("your-app-key")
 
-# Publish event
-await client.publish("event/name", ["recipient-id"], {"data": "value"})
+# Publish message
+await client.publish("message/name", ["recipient-id"], {"data": "value"})
 
-# Subscribe to events
-subscription = await client.subscribe("event/name")
-subscription.on(lambda event: print(event))
+# Subscribe to messages
+subscription = await client.subscribe("message/name")
+subscription.on(lambda message: print(message))
 ```
 
 ### WebSocket Client
@@ -86,12 +86,12 @@ from ensync_sdk_ws import EnSyncEngine
 engine = EnSyncEngine("wss://node.ensync.cloud")
 client = await engine.create_client("your-app-key")
 
-# Publish event
-await client.publish("event/name", ["recipient-id"], {"data": "value"})
+# Publish message
+await client.publish("message/name", ["recipient-id"], {"data": "value"})
 
-# Subscribe to events
-subscription = await client.subscribe("event/name")
-subscription.on(lambda event: print(event))
+# Subscribe to messages
+subscription = await client.subscribe("message/name")
+subscription.on(lambda message: print(message))
 ```
 
 ## 🔧 Development
